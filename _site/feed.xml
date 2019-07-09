@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://www.borednerds.com/feed.xml" rel="self" type="application/atom+xml" /><link href="http://www.borednerds.com/" rel="alternate" type="text/html" /><updated>2019-07-08T22:53:36-05:00</updated><id>http://www.borednerds.com/feed.xml</id><title type="html">Bored Nerds Blog</title><subtitle>We are bored nerds. We do stuff and blog about it. We are bad at writing descriptions</subtitle><entry><title type="html">Reversing Firmware With Radare</title><link href="http://www.borednerds.com/reversing/radare/automotive/2018/03/12/reversing-firmware-with-radare.html" rel="alternate" type="text/html" title="Reversing Firmware With Radare" /><published>2018-03-12T22:33:57-05:00</published><updated>2018-03-12T22:33:57-05:00</updated><id>http://www.borednerds.com/reversing/radare/automotive/2018/03/12/reversing-firmware-with-radare</id><content type="html" xml:base="http://www.borednerds.com/reversing/radare/automotive/2018/03/12/reversing-firmware-with-radare.html">&lt;p&gt;Hello everyone! Here’s a quick guide on reversing firmware w/ &lt;a href=&quot;https://github.com/radare/radare2&quot;&gt;radare&lt;/a&gt;. 
+Or, rather, &lt;em&gt;loading&lt;/em&gt; firmware into radare; the process of reversing software in &lt;em&gt;any&lt;/em&gt; disassembler is a little 
+beyond the scope of any one blog post.&lt;/p&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;Like most reversers, my experience with disassemblers started with compiled binaries. Loading these (barring strange 
+circumstances) is pretty straightforward: you open the file in your disassembler of choice, the program reads binary info 
+(architecture, entry point, etc) and goes to town. However, when I moved into embedded security, I found myself
+needing to analyze microcontroller firmware. This was more or less how that went:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/gru_reversing_scrub.png&quot; alt=&quot;a gru meme&quot; /&gt;&lt;/p&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Fortunately a member of my team was gracious enough to train me up on doing the work in IDA and all was right with the world.
+However, recently I spent some time on leave and wanted to do some of the same work with open source tools. radare2 in particular
+had always scared me a little bit so I chose that to work with. I sat down with a firmware dump that I got out of a
+sketchy telematics dongle that I picked up, watched some radare2-related con talks, and managed to get the basics together.&lt;/p&gt;
+
+&lt;p&gt;I decided to write this because I prefer written instructional material and I couldn’t find any written guides with this
+level of detail. That said, I’ve opted to use &lt;code class=&quot;highlighter-rouge&quot;&gt;asciinema&lt;/code&gt; videos to demo some stuff on the console in a few cases where I
+felt it worked better than screenshots; In my defense, I kept them short and they don’t need sound. :)&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Note:&lt;/em&gt; I’m not giving any details of the dongle make or model, not will I be showing any pictures. Suffice it to say that it plugs 
+into a vehicles’ diagnostic port and connects to a cellular handset.&lt;/p&gt;
+
+&lt;h2 id=&quot;the-objective&quot;&gt;The Objective&lt;/h2&gt;
+
+&lt;p&gt;I’m gonna keep it simple: we just want to find the interrupt handler that handles received CAN messages. That’s it. It
+may not seem like a lot, but it’ll keep us going long enough for a medium-length blog post. :)&lt;/p&gt;
+
+&lt;h2 id=&quot;trim-the-file&quot;&gt;Trim the File&lt;/h2&gt;
+
+&lt;p&gt;The first thing to do is to trim the relevant parts of the firmware file. This will help the auto-analysis take less time.
+The firmware dump was obtained in the
+&lt;a href=&quot;http://www.keil.com/support/docs/1584/&quot;&gt;Intel hex file format&lt;/a&gt;. I loaded it into r2 using the &lt;code class=&quot;highlighter-rouge&quot;&gt;ihex://&lt;/code&gt; IO plugin
+but, unfortunately, that plugin is &lt;a href=&quot;https://github.com/radare/radare2/issues/14439&quot;&gt;broken&lt;/a&gt; at the moment so I had
+to convert it to a regular binary file.&lt;/p&gt;
+
+&lt;p&gt;Looking at the hex file, it looks like the lowest defined address should be &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8000000&lt;/code&gt;:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/hex_screenshot.png&quot; alt=&quot;screenshot of hex file&quot; /&gt;&lt;/p&gt;
+  &lt;figcaption&gt;.hex file screenshot. Click &lt;a href=&quot;http://www.keil.com/support/docs/1584/&quot;&gt;here&lt;/a&gt; for an explanation on what this all does.&lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Here, we confirm that and write out the defined data to a separate file:&lt;/p&gt;
+&lt;figure&gt;
+&lt;script id=&quot;asciicast-FTOdttP8bULB0vTLhPE9AEkDc&quot; src=&quot;https://asciinema.org/a/FTOdttP8bULB0vTLhPE9AEkDc.js&quot; async=&quot;&quot;&gt;&lt;/script&gt;
+
+&lt;/figure&gt;
+
+&lt;p&gt;Here we use the &lt;code class=&quot;highlighter-rouge&quot;&gt;wtf!&lt;/code&gt; command to write from the current location (the start of defined data @ &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8000000&lt;/code&gt;) to the end of the file.&lt;/p&gt;
+
+&lt;h2 id=&quot;determine-the-architecture&quot;&gt;Determine the Architecture&lt;/h2&gt;
+
+&lt;p&gt;The next thing to do is figure out the architecture. In most cases, we could just look at the markings on the chip itself,
+but in this case the chip was covered by an RF shield. I &lt;a href=&quot;https://www.fcc.gov/oet/ea/fccid&quot;&gt;searched the FCC ID&lt;/a&gt; to find relevant
+FCC filings, but in this case the images weren’t particularly helpful. Here’s a cropped image showing just the processor:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/just_the_chip.png&quot; alt=&quot;microcontroller picture showing a blurry ARM logo&quot; /&gt;&lt;/p&gt;
+  &lt;figcaption&gt;Picture of microcontroller from FCC filings, apparently taken with a cut-rate potato.&lt;/figcaption&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;If we squint, we can read “ARM” and not much else. But that’s something! Let’s figure out some other parameters using the &lt;code class=&quot;highlighter-rouge&quot;&gt;p=i&lt;/code&gt; command, which
+shows the number of invalid instructions per block size. The basic process I used is to start twiddling &lt;code class=&quot;highlighter-rouge&quot;&gt;asm&lt;/code&gt; values, namely
+&lt;code class=&quot;highlighter-rouge&quot;&gt;asm.bits&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;asm.cpu&lt;/code&gt; (we already know &lt;code class=&quot;highlighter-rouge&quot;&gt;asm.arch&lt;/code&gt;), until we minimize the invalid instructions.&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;script id=&quot;asciicast-BMhhX5s8gZZo2H1jxRZjAz7fS&quot; src=&quot;https://asciinema.org/a/BMhhX5s8gZZo2H1jxRZjAz7fS.js&quot; async=&quot;&quot;&gt;&lt;/script&gt;
+
+&lt;/figure&gt;
+
+&lt;p&gt;So as we can see, setting &lt;code class=&quot;highlighter-rouge&quot;&gt;asm.bits=16&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;asm.cpu=cortex&lt;/code&gt; seems to minimize the number of bad instructions.&lt;/p&gt;
+
+&lt;p&gt;Finally, if you comb through a strings dump from the image, you get this:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/izz_stm.png&quot; alt=&quot;the chip model number&quot; /&gt;&lt;/p&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Googling those model numbers will tell us that they’re both basically the same 32-bit ARM Cortex-M3 microcontroller. So why did
+the 16-bit setting work better than 32? The code is probably in Thumb mode, which &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; needs to be in 16-bit mode to handle.&lt;/p&gt;
+
+&lt;h2 id=&quot;analysis-the-first-crack&quot;&gt;Analysis: the first crack&lt;/h2&gt;
+
+&lt;p&gt;So, just as a reminder, we’re trying to find the CAN interrupt handler. To do that, we have to find the 
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Interrupt_vector_table&quot;&gt;Interrupt Vector Table&lt;/a&gt; (IVT). If we check the processor documentation&lt;sup id=&quot;fnref:1&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;, we
+see that the interrupt vector table should be at &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8000000&lt;/code&gt;. Here’s what the address at &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8000000&lt;/code&gt; looks like if we
+interpret it as an array of 32-bit words:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/IVT.png&quot; alt=&quot;IVT screenshot&quot; /&gt;&lt;/p&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;That matches what the documentation leads us to expect. The first byte is an SRAM address&lt;sup id=&quot;fnref:2&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;, and all the rest are addresses in code flash.
+They’re all odd, which means that &lt;a href=&quot;http://www.keil.com/support/docs/3133.htm&quot;&gt;they’re all pointers to Thumb code&lt;/a&gt;, so that explains
+why we got the fewest invalid instructions with &lt;code class=&quot;highlighter-rouge&quot;&gt;asm.arch&lt;/code&gt; set to 16.&lt;/p&gt;
+
+&lt;p&gt;So we’re good, right? WRONG! The CAN RX interrupt vector is at an offset of &lt;code class=&quot;highlighter-rouge&quot;&gt;0x90&lt;/code&gt;. We notice in the figure above that the pointer is the
+same as all the other interrupt handlers, which is immediately discouraging. Not, however, as discouraging as when we look at the code it
+points to:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;p&gt;&lt;img src=&quot;http://www.borednerds.com/assets/images/pd1_initial_ivt.png&quot; alt=&quot;IVT disassembly&quot; /&gt;&lt;/p&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Clearly, this is not the function we want, since it’s an infinite loop. But fear not! On this platform (and many platforms), the IVT can be
+moved by modifying &lt;a href=&quot;http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.dui0552a/CIHGGBIH.html&quot;&gt;a system register called VTOR&lt;/a&gt; at &lt;code class=&quot;highlighter-rouge&quot;&gt;0xE000ED08&lt;/code&gt;.
+All we need to do is find crossreferences to that memory location, track writes to it, and we’re good. Right?&lt;/p&gt;
+
+&lt;p&gt;Let’s see how that pans out:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;script id=&quot;asciicast-cokM45tFEWmm6Eg40iU29jwQi&quot; src=&quot;https://asciinema.org/a/cokM45tFEWmm6Eg40iU29jwQi.js&quot; async=&quot;&quot;&gt;&lt;/script&gt;
+
+&lt;/figure&gt;
+
+&lt;p&gt;What happened here? There’s no xrefs here, even though we see the VTOR’s address in a few places that look like pointers.
+Well, when we load the file into &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; only knows about the memory addresses that we explicitly tell it about. In this case,
+that’s only a couple hundred kilobytes starting at memory address &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8000000&lt;/code&gt;. &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; doesn’t know anything about the address &lt;code class=&quot;highlighter-rouge&quot;&gt;0xE000ED08&lt;/code&gt;, so it
+won’t track cross-references to it.&lt;/p&gt;
+
+&lt;h2 id=&quot;feeding-more-information-to-the-disassembler&quot;&gt;Feeding More Information to the Disassembler&lt;/h2&gt;
+
+&lt;p&gt;So how do we tell &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; about those memory addresses? We define additional maps using the &lt;code class=&quot;highlighter-rouge&quot;&gt;on&lt;/code&gt; command. We check the processor documentation&lt;sup id=&quot;fnref:1:1&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;
+again to find the memory map, and find that SRAM comprises a 512M block starting at &lt;code class=&quot;highlighter-rouge&quot;&gt;0x20000000&lt;/code&gt;, peripherals are another 512M block based
+at &lt;code class=&quot;highlighter-rouge&quot;&gt;0x40000000&lt;/code&gt;, and Cortex peripherals (like the Vector Table Offset Register) are at &lt;code class=&quot;highlighter-rouge&quot;&gt;0xE0000000&lt;/code&gt;. The general form I used for defining a
+memory block is like so:&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;on malloc://512M &amp;lt;base_addr&amp;gt; rw
+omn &amp;lt;base_addr&amp;gt; &amp;lt;Name&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;/figure&gt;
+
+&lt;p&gt;Typing all this in when we load the file into &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; is kind of tiresome, so I compiled all the &lt;code class=&quot;highlighter-rouge&quot;&gt;asm&lt;/code&gt; directives and memory maps into a script
+file. By using the &lt;code class=&quot;highlighter-rouge&quot;&gt;-i&lt;/code&gt; flag when invoking &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt;, it will execute all of the commands after loading the file. You can find a copy of the script
+file &lt;a href=&quot;https://raw.githubusercontent.com/haystack-ia/radare-funhouse/master/STM32F103XX.r2&quot;&gt;here&lt;/a&gt; for reference.&lt;/p&gt;
+
+&lt;figure&gt;
+&lt;script id=&quot;asciicast-IP52OCWeUuvq1rCoF26vhZpzt&quot; src=&quot;https://asciinema.org/a/IP52OCWeUuvq1rCoF26vhZpzt.js&quot; async=&quot;&quot;&gt;&lt;/script&gt;
+
+&lt;/figure&gt;
+
+&lt;p&gt;And there it is! Now we can do some ~static analysis~ to figure out what this thing does with CAN frames.&lt;/p&gt;
+
+&lt;h2 id=&quot;so-now-what&quot;&gt;So now what?&lt;/h2&gt;
+
+&lt;p&gt;To be honest, I have no concrete plans for this thing. At this point I just poke at the firmware dump during the brief periods when my
+daughter is asleep. The next step may be to just take my newfound &lt;code class=&quot;highlighter-rouge&quot;&gt;r2&lt;/code&gt; skills on to other projects.&lt;/p&gt;
+
+&lt;h2 id=&quot;acknowledgements&quot;&gt;Acknowledgements&lt;/h2&gt;
+
+&lt;p&gt;Many thanks are due to &lt;a href=&quot;https://twitter.com/BenLGardiner&quot;&gt;@BenLGardiner&lt;/a&gt;, who introduced me to radare; I also cribbed some of this material from
+one of his workshops. Also to &lt;a href=&quot;https://twitter.com/trufae&quot;&gt;pancake&lt;/a&gt;, who gave a &lt;a href=&quot;https://www.youtube.com/watch?v=oXSx0Qo2Upk&quot;&gt;pretty good talk&lt;/a&gt; on
+reversing firmware with radare that got me started down the path.&lt;/p&gt;
+
+&lt;div class=&quot;footnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot;&gt;
+      &lt;p&gt;Docs are &lt;a href=&quot;https://www.st.com/en/microcontrollers-microprocessors/stm32f103rd.html#resource&quot;&gt;here&lt;/a&gt;. In addition to the datasheet, you’ll want
+  RM0008 for peripheral addresses and PM0056 for general STM32 Cortex-M3 information. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt; &lt;a href=&quot;#fnref:1:1&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;sup&gt;2&lt;/sup&gt;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot;&gt;
+      &lt;p&gt;Check the memory map in the processor docs. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Haystack</name></author><summary type="html">Hello everyone! Here’s a quick guide on reversing firmware w/ radare. Or, rather, loading firmware into radare; the process of reversing software in any disassembler is a little beyond the scope of any one blog post.</summary></entry></feed>
