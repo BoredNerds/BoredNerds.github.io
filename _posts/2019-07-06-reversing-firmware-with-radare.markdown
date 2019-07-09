@@ -31,7 +31,7 @@ I decided to write this because I prefer written instructional material and I co
 level of detail. That said, I've opted to use `asciinema` videos to demo some stuff on the console in a few cases where I
 felt it worked better than screenshots; In my defense, I kept them short and they don't need sound. :)
 
-*Note:* I'm not giving any details of the dongle make or model, not will I be showing any identifying pictures. 
+*Note:* I'm not giving any details of the dongle make or model, nor will I show any identifying pictures. 
 Suffice it to say that it plugs into a vehicle's diagnostic port and connects to a cellular handset.
 
 ## The Objective
@@ -162,8 +162,9 @@ IDK though, who knows? I might adapt this thing to working with passenger vehicl
 ## Acknowledgements
 
 Many thanks are due to [@BenLGardiner](https://twitter.com/BenLGardiner), who introduced me to radare; I also cribbed some of this material from
-one of his workshops. Also to [pancake](https://twitter.com/trufae), who gave a [pretty good talk](https://www.youtube.com/watch?v=oXSx0Qo2Upk) on
-reversing firmware with radare that got me started down the path.
+[one of his workshops](https://gist.github.com/BenGardiner/c0b176eb93883892fbc4679bb4b9ec1a). 
+Also to [pancake](https://twitter.com/trufae), who gave a [pretty good talk](https://www.youtube.com/watch?v=oXSx0Qo2Upk) on reversing firmware with 
+radare that got me started down the path.
 
 
 
