@@ -17,9 +17,9 @@ circumstances) is pretty straightforward: you open the file in your disassembler
 (architecture, entry point, etc) and goes to town. However, when I moved into embedded security, I found myself
 needing to analyze microcontroller firmware. This was more or less how that went:
 
-{% figure %}
+
 ![a gru meme]({{ site.url }}/assets/images/gru_reversing_scrub.png)
-{% endfigure %}
+
 
 Fortunately a member of my team was gracious enough to train me up on doing the work in IDA and all was right with the world.
 However, recently I spent some time on leave and wanted to do some of the same work with open source tools. radare2 in particular
@@ -49,14 +49,14 @@ to convert it to a regular binary file.
 
 Looking at the hex file, it looks like the lowest defined address should be `0x8000000`:
 
-{% figure [caption: ".hex file screenshot. Click [here](http://www.keil.com/support/docs/1584/) for an explanation on what this all does."] %}
+
 ![screenshot of hex file]({{ site.url }}/assets/images/hex_screenshot.png)
-{% endfigure %}
+
 
 Here, we confirm that and write out the defined data to a separate file:
-{% figure %}
+
 <script id="asciicast-FTOdttP8bULB0vTLhPE9AEkDc" src="https://asciinema.org/a/FTOdttP8bULB0vTLhPE9AEkDc.js" async></script>
-{% endfigure %}
+
 
 Here we use the `wtf!` command to write from the current location (the start of defined data @ `0x8000000`) to the end of the file.
 
@@ -66,26 +66,26 @@ The next thing to do is figure out the architecture. In most cases, we could jus
 but in this case the chip was covered by an RF shield. I [searched the FCC ID](https://www.fcc.gov/oet/ea/fccid) to find relevant
 FCC filings, but in this case the images weren't particularly helpful. Here's a cropped image showing just the processor:
 
-{% figure [caption: "Picture of microcontroller from FCC filings, apparently taken with a cut-rate potato."] %}
+
 ![microcontroller picture showing a blurry ARM logo]({{ site.url }}/assets/images/just_the_chip.png)
-{% endfigure %}
+
 
 If we squint, we can read "ARM" and not much else. But that's something! Let's figure out some other parameters using the `p=i` command, which
 shows the number of invalid instructions per block size. The basic process I used is to start twiddling `asm` values, namely
 `asm.bits` and `asm.cpu` (we already know `asm.arch`), until we minimize the invalid instructions.
 
 
-{% figure %}
+
 <script id="asciicast-BMhhX5s8gZZo2H1jxRZjAz7fS" src="https://asciinema.org/a/BMhhX5s8gZZo2H1jxRZjAz7fS.js" async></script>
-{% endfigure %}
+
 
 So as we can see, setting `asm.bits=16` and `asm.cpu=cortex` seems to minimize the number of bad instructions.
 
 Finally, if you comb through a strings dump from the image, you get this:
 
-{% figure %}
+
 ![the chip model number]({{ site.url }}/assets/images/izz_stm.png)
-{% endfigure %}
+
 
 Googling those model numbers will tell us that they're both basically the same 32-bit ARM Cortex-M3 microcontroller. So why did
 the 16-bit setting work better than 32? The code is probably in Thumb mode, which `r2` needs to be in 16-bit mode to handle.
@@ -97,9 +97,9 @@ So, just as a reminder, we're trying to find the CAN interrupt handler. To do th
 see that the interrupt vector table should be at `0x8000000`. Here's what the address at `0x8000000` looks like if we
 interpret it as an array of 32-bit words:
 
-{% figure %}
+
 ![IVT screenshot]({{ site.url }}/assets/images/IVT.png)
-{% endfigure %}
+
 
 That matches what the documentation leads us to expect. The first byte is an SRAM address[^2], and all the rest are addresses in code flash.
 They're all odd, which means that [they're all pointers to Thumb code](http://www.keil.com/support/docs/3133.htm), so that explains
@@ -109,9 +109,9 @@ So we're good, right? WRONG! The CAN RX interrupt vector is at an offset of `0x9
 same as all the other interrupt handlers, which is immediately discouraging. Not, however, as discouraging as when we look at the code it
 points to:
 
-{% figure %}
+
 ![IVT disassembly]({{ site.url }}/assets/images/pd1_initial_ivt.png)
-{% endfigure %}
+
 
 Clearly, this is not the function we want, since it's an infinite loop. But fear not! On this platform (and many platforms), the IVT can be
 moved by modifying [a system register called VTOR](http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.dui0552a/CIHGGBIH.html) at `0xE000ED08`.
@@ -119,9 +119,9 @@ All we need to do is find crossreferences to that memory location, track writes 
 
 Let's see how that pans out:
 
-{% figure %}
+
 <script id="asciicast-cokM45tFEWmm6Eg40iU29jwQi" src="https://asciinema.org/a/cokM45tFEWmm6Eg40iU29jwQi.js" async></script>
-{% endfigure %}
+
 
 What happened here? There's no xrefs here, even though we see the VTOR's address in a few places that look like pointers.
 Well, when we load the file into `r2`, `r2` only knows about the memory addresses that we explicitly tell it about. In this case,
@@ -135,20 +135,20 @@ again to find the memory map, and find that SRAM comprises a 512M block starting
 at `0x40000000`, and Cortex peripherals (like the Vector Table Offset Register) are at `0xE0000000`. The general form I used for defining a
 memory block is like so:
 
-{% figure %}
+
 ```
 on malloc://512M <base_addr> rw
 omn <base_addr> <Name>
 ```
-{% endfigure %}
+
 
 Typing all this in when we load the file into `r2` is kind of tiresome, so I compiled all the `asm` directives and memory maps into a script
 file. By using the `-i` flag when invoking `r2`, it will execute all of the commands after loading the file. You can find a copy of the script
 file [here](https://raw.githubusercontent.com/haystack-ia/radare-funhouse/master/STM32F103XX.r2) for reference.
 
-{% figure %}
+
 <script id="asciicast-IP52OCWeUuvq1rCoF26vhZpzt" src="https://asciinema.org/a/IP52OCWeUuvq1rCoF26vhZpzt.js" async></script>
-{% endfigure %}
+
 
 And there it is! Now we can do some ~static analysis~ to figure out what this thing does with CAN frames.
 
@@ -156,6 +156,8 @@ And there it is! Now we can do some ~static analysis~ to figure out what this th
 
 To be honest, I have no concrete plans for this thing. At this point I just poke at the firmware dump during the brief periods when my
 daughter is asleep. The next step may be to just take my newfound `r2` skills on to other projects.
+
+IDK though, who knows? I might adapt this thing to working with passenger vehicles instead of trucks. 
 
 ## Acknowledgements
 
