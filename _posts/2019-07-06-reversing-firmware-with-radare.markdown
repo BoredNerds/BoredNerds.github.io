@@ -31,8 +31,8 @@ I decided to write this because I prefer written instructional material and I co
 level of detail. That said, I've opted to use `asciinema` videos to demo some stuff on the console in a few cases where I
 felt it worked better than screenshots; In my defense, I kept them short and they don't need sound. :)
 
-*Note:* I'm not giving any details of the dongle make or model, not will I be showing any pictures. Suffice it to say that it plugs 
-into a vehicles' diagnostic port and connects to a cellular handset.
+*Note:* I'm not giving any details of the dongle make or model, not will I be showing any identifying pictures. 
+Suffice it to say that it plugs into a vehicle's diagnostic port and connects to a cellular handset.
 
 ## The Objective
 
