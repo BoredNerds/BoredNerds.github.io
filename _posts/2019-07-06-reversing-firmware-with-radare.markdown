@@ -2,7 +2,7 @@
 layout: post
 title:  "Reversing Firmware With Radare"
 author: Haystack
-date:   2018-03-12 22:33:57 -0500
+date:   2019-07-06 23:42:57 -0500
 categories: reversing radare automotive
 ---
 
